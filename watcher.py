@@ -198,20 +198,13 @@ def handle_v3_pool(w3, log, tx_hash):
 def watch_liquidity(override_rpc=None):
     # 1. Validate Config & Get Web3 Instance
     if override_rpc:
-        print(f"Connecting to overridden RPC: {override_rpc}...")
+        print(f"[+] Initializing watcher on RPC: {override_rpc}")
         w3 = Web3(Web3.HTTPProvider(override_rpc, request_kwargs={'timeout': 5}))
-        try:
-            chain_id = w3.eth.chain_id
-            print(f"[+] Connected successfully! Chain ID: {chain_id}")
-        except Exception as e:
-            print(f"[!] Error verifying connection to overridden RPC: {e}")
-            sys.exit(1)
     else:
         success, w3 = validate_config()
         if not success:
             print("[!] Invalid config. Exiting.")
             sys.exit(1)
-
         
     # Calculate keccak topics
     v2_topic = w3.keccak(text=V2_PAIR_CREATED_SIG).hex()
@@ -221,10 +214,18 @@ def watch_liquidity(override_rpc=None):
     print(f"  - Uniswap V2 PairCreated: {v2_topic}")
     print(f"  - Uniswap V3 PoolCreated: {v3_topic}")
     
-    current_block = get_last_processed_block(w3)
+    # We query the block number inside a try-except to prevent startup crash on rate limits
+    current_block = None
+    while current_block is None:
+        try:
+            current_block = get_last_processed_block(w3)
+        except Exception as e:
+            print(f"[!] Error fetching starting block (rate limited?): {e}. Retrying in 5 seconds...")
+            time.sleep(5)
     
     print("\n[+] Starting liquidity event watcher loop. Polling block-by-block...")
     send_telegram_message("🤖 <b>Arc Liquidity Watcher is now ONLINE</b> and listening for pool creations...")
+
     
     max_batch_size = 100
     
